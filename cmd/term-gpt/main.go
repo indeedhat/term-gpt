@@ -18,7 +18,7 @@ func main() {
 	}
 	client := openai.NewClientWithConfig(conf)
 
-	prog := tea.NewProgram(gpt.New(client))
+	prog := tea.NewProgram(gpt.New(client), tea.WithAltScreen())
 
 	// horrible hack
 	go func() {
