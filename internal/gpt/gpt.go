@@ -138,16 +138,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m Model) View() string {
-	var spinner string
+	var textarea string
 	if m.waiting {
-		spinner = m.spinner.View() + "\n\n"
+		textarea = m.spinner.View()
+	} else {
+		textarea = m.textarea.View()
 	}
 
 	return fmt.Sprintf(
-		"%s\n\n%s%s\n\n",
+		"%s\n\n%s\n\n",
 		m.viewport.View(),
-		spinner,
-		m.textarea.View(),
+		textarea,
 	)
 }
 
