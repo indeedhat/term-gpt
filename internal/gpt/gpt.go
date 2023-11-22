@@ -3,7 +3,6 @@ package gpt
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -52,7 +51,7 @@ func New(client *openai.Client) Model {
 
 	sp := spinner.New()
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	sp.Spinner = spinner.Globe
+	sp.Spinner = spinner.Dot
 
 	vp := viewport.New(50, 10)
 	vp.SetContent("Welcom to term-gpt!")
@@ -72,7 +71,7 @@ func New(client *openai.Client) Model {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return textarea.Blink
+	return tea.Batch(textarea.Blink, m.spinner.Tick)
 }
 
 // Update implements tea.Model.
@@ -80,7 +79,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		taCmd tea.Cmd
 		vpCmd tea.Cmd
-		spCmd tea.Cmd
 	)
 
 	m.textarea, taCmd = m.textarea.Update(msg)
@@ -92,8 +90,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinMsg:
 		m.waiting = true
-		m.spinner, spCmd = m.spinner.Update(msg)
-		return m, spCmd
 
 	case chatResult:
 		m.waiting = false
@@ -130,6 +126,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fmt.Println(msg.Error())
 		m.cancel()
 		return m, tea.Quit
+
+	default:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
 	return m, tea.Batch(taCmd, vpCmd)
@@ -154,11 +155,8 @@ var _ tea.Model = (*Model)(nil)
 
 // sendGptRequest sends off a completion request to the chat gpt api
 func sendGptRequest(m Model) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go spin(ctx, m)
-
 	m.program.Send(spinMsg(true))
+
 	req := openai.ChatCompletionRequest{
 		Model:     openai.GPT3Dot5Turbo,
 		Messages:  m.chat.messages,
@@ -173,18 +171,4 @@ func sendGptRequest(m Model) {
 	}
 
 	m.program.Send(chatResult{message: resp.Choices[0].Message.Content})
-}
-
-func spin(ctx context.Context, m Model) {
-	t := time.NewTicker(100 * time.Millisecond)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			m.program.Send(spinMsg(true))
-		}
-	}
 }
