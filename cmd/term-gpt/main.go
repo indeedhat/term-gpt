@@ -13,7 +13,9 @@ import (
 
 func main() {
 	conf := openai.DefaultConfig(env.Get(env.OpenAiToken))
-	conf.OrgID = env.Get(env.OpenAiOrg)
+	if org := env.Get(env.OpenAiOrg); org != "" {
+		conf.OrgID = env.Get(env.OpenAiOrg)
+	}
 	client := openai.NewClientWithConfig(conf)
 
 	prog := tea.NewProgram(gpt.New(client))
