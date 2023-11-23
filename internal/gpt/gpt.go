@@ -3,6 +3,7 @@ package gpt
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -14,7 +15,10 @@ import (
 	"golang.org/x/term"
 )
 
-const textAreaHeight = 3
+const (
+	textAreaHeight   = 3
+	chatHistoryWidth = 0.3
+)
 
 type chatResult struct {
 	err     error
@@ -24,9 +28,10 @@ type chatResult struct {
 type spinMsg bool
 
 type Model struct {
-	viewport viewport.Model
-	textarea textarea.Model
-	spinner  spinner.Model
+	chatHistory viewport.Model
+	chatVp      viewport.Model
+	textarea    textarea.Model
+	spinner     spinner.Model
 
 	// Chat concains the message history for this chat session
 	chat    *chatLog
@@ -62,6 +67,11 @@ func New(client *openai.Client) *Model {
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 	sp.Spinner = spinner.Dot
 
+	historyWidth := int(math.Floor(float64(w) * chatHistoryWidth))
+	ch := viewport.New(historyWidth, h-textAreaHeight*2)
+	ch.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
+	ch.SetContent(lipgloss.NewStyle().Width(w).Render(" "))
+
 	vp := viewport.New(w, h-textAreaHeight*2)
 	vp.Width = w
 	vp.Height = h - textAreaHeight*2
@@ -72,7 +82,8 @@ func New(client *openai.Client) *Model {
 
 	return &Model{
 		textarea:     ta,
-		viewport:     vp,
+		chatHistory:  ch,
+		chatVp:       vp,
 		spinner:      sp,
 		chat:         newChatLog(),
 		client:       client,
@@ -96,7 +107,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	)
 
 	m.textarea, taCmd = m.textarea.Update(msg)
-	m.viewport, vpCmd = m.viewport.Update(msg)
+	m.chatVp, vpCmd = m.chatVp.Update(msg)
 
 	switch msg := msg.(type) {
 	case *tea.Program:
@@ -168,7 +179,7 @@ func (m *Model) View() string {
 
 	return fmt.Sprintf(
 		"%s\n\n%s\n\n",
-		m.viewport.View(),
+		m.chatVp.View(),
 		textarea,
 	)
 }
@@ -179,8 +190,8 @@ func (m *Model) handleWindowResize(w, h int) {
 	m.windowWidth = h
 	m.windowWidth = w
 
-	m.viewport.Height = h - textAreaHeight
-	m.viewport.Width = w
+	m.chatVp.Height = h - textAreaHeight
+	m.chatVp.Width = w
 
 	m.textarea.SetWidth(w)
 
@@ -188,8 +199,8 @@ func (m *Model) handleWindowResize(w, h int) {
 }
 
 func (m *Model) updateViewportContent(text string) {
-	m.viewport.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
-	m.viewport.GotoBottom()
+	m.chatVp.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
+	m.chatVp.GotoBottom()
 }
 
 var _ tea.Model = (*Model)(nil)
