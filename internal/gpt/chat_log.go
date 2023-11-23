@@ -12,6 +12,7 @@ type chatLog struct {
 	nameStyle lipgloss.Style
 }
 
+// newChatLog helper for setting up the chat log instance
 func newChatLog() *chatLog {
 	return &chatLog{
 		nameStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("5")),

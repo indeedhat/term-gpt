@@ -113,87 +113,27 @@ func (m *Model) Init() tea.Cmd {
 
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		taCmd   tea.Cmd
-		vpCmd   tea.Cmd
-		chCmd   tea.Cmd
-		chLiCmd tea.Cmd
-	)
-
-	switch m.focus {
-	case elemTextArea:
-		m.textarea, taCmd = m.textarea.Update(msg)
-	case elemChatHistory:
-		m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
-	}
-	m.chatVp, vpCmd = m.chatVp.Update(msg)
-	m.chatHistory, chCmd = m.chatHistory.Update(msg)
+	uiCmd := m.updateUiComponents(msg)
 
 	switch msg := msg.(type) {
 	case *tea.Program:
 		m.program = msg
-
 	case spinMsg:
 		m.waiting = true
-
-	case tickMsg:
-		w, h, _ := term.GetSize(int(os.Stdout.Fd()))
-		if w != m.windowWidth || h != m.windowHeight {
-			m.handleWindowResize(w, h)
-			return m, tea.Batch(tick, windowResize(w, h))
-		}
-
-		return m, tick
-
 	case chatResultMsg:
-		m.waiting = false
-		if msg.err != nil {
-			msg.message = fmt.Sprintf("Error: %s", msg.err.Error())
-		}
-		m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: msg.message,
-		})
-		m.updateViewportContent(m.chat.Render())
-
+		m.handleChatResultMsg(msg)
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
-			fmt.Println("Goodbye :)")
-			m.cancel()
-			return m, tea.Quit
-		case tea.KeyTab:
-			if m.focus == elemTextArea {
-				m.textarea.Blur()
-				m.focus = elemChatHistory
-			} else {
-				m.textarea.Focus()
-				m.focus = elemTextArea
-			}
-		case tea.KeyEnter:
-			m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleUser,
-				Content: m.textarea.Value(),
-			})
-
-			m.textarea.Reset()
-			m.updateViewportContent(m.chat.Render())
-
-			go sendGptRequest(m)
+		if cmd := m.handleKeyMsg(msg); cmd != nil {
+			return m, cmd
 		}
-
+	case tickMsg:
+		return m, m.handleTickMsg(msg)
 	case error:
-		fmt.Println(msg.Error())
 		m.cancel()
 		return m, tea.Quit
-
-	default:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
 	}
 
-	return m, tea.Batch(taCmd, vpCmd, chCmd, chLiCmd)
+	return m, uiCmd
 }
 
 // View implements tea.Model.
@@ -214,6 +154,86 @@ func (m *Model) View() string {
 	)
 }
 
+// updateUiComponents handles passing the tea.Msg to all the update methods of the active ui elements
+// in order to update their state
+func (m *Model) updateUiComponents(msg tea.Msg) tea.Cmd {
+	var (
+		taCmd   tea.Cmd
+		vpCmd   tea.Cmd
+		chCmd   tea.Cmd
+		chLiCmd tea.Cmd
+		spinCmd tea.Cmd
+	)
+
+	switch m.focus {
+	case elemTextArea:
+		m.textarea, taCmd = m.textarea.Update(msg)
+	case elemChatHistory:
+		m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
+	}
+	m.chatVp, vpCmd = m.chatVp.Update(msg)
+	m.chatHistory, chCmd = m.chatHistory.Update(msg)
+	m.spinner, spinCmd = m.spinner.Update(msg)
+
+	return tea.Batch(taCmd, vpCmd, chCmd, chLiCmd, spinCmd)
+}
+
+// handleChatResultMsg takes the chat response from the open ai API and inserts it into the
+// chat log
+func (m *Model) handleChatResultMsg(msg chatResultMsg) {
+	m.waiting = false
+	if msg.err != nil {
+		msg.message = fmt.Sprintf("Error: %s", msg.err.Error())
+	}
+
+	m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleSystem,
+		Content: msg.message,
+	})
+	m.updateViewportContent(m.chat.Render())
+}
+
+// handleTickMsg handles the update tick for the UI
+func (m *Model) handleTickMsg(msg tickMsg) tea.Cmd {
+	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+	if w != m.windowWidth || h != m.windowHeight {
+		m.handleWindowResize(w, h)
+		return tea.Batch(tick, windowResize(w, h))
+	}
+
+	return tick
+}
+
+// handleKeyMsg handles the side effects of any defined tea.KeyMsg key presses
+func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		fmt.Println("Goodbye :)")
+		m.cancel()
+		return tea.Quit
+	case tea.KeyTab:
+		if m.focus == elemTextArea {
+			m.textarea.Blur()
+			m.focus = elemChatHistory
+		} else {
+			m.textarea.Focus()
+			m.focus = elemTextArea
+		}
+	case tea.KeyEnter:
+		m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: m.textarea.Value(),
+		})
+
+		m.textarea.Reset()
+		m.updateViewportContent(m.chat.Render())
+
+		go sendGptRequest(m)
+	}
+
+	return nil
+}
+
 // handleWindowResize updates the size of the windows containing elements based on the current
 // terminal window size
 func (m *Model) handleWindowResize(w, h int) {
@@ -232,6 +252,8 @@ func (m *Model) handleWindowResize(w, h int) {
 	m.updateViewportContent(m.chat.Render())
 }
 
+// updateViewportContent fills the chat viewport with rendered messages constrained to the size
+// of the viewport
 func (m *Model) updateViewportContent(text string) {
 	m.chatVp.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
 	m.chatVp.GotoBottom()
