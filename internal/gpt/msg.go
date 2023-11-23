@@ -6,6 +6,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type chatResultMsg struct {
+	err     error
+	message string
+}
+
+type spinMsg bool
+
 type tickMsg struct{}
 
 // tick keeps the update cycle ticking at rate of 5hz

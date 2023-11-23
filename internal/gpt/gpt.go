@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -17,21 +18,15 @@ import (
 
 const (
 	textAreaHeight   = 3
-	chatHistoryWidth = 0.3
+	chatHistoryWidth = 0.25
 )
 
-type chatResult struct {
-	err     error
-	message string
-}
-
-type spinMsg bool
-
 type Model struct {
-	chatHistory viewport.Model
-	chatVp      viewport.Model
-	textarea    textarea.Model
-	spinner     spinner.Model
+	chatHistory     viewport.Model
+	chatHistoryList list.Model
+	chatVp          viewport.Model
+	textarea        textarea.Model
+	spinner         spinner.Model
 
 	// Chat concains the message history for this chat session
 	chat    *chatLog
@@ -48,7 +43,7 @@ type Model struct {
 
 // New creates a new model for the bubble tea tui
 func New(client *openai.Client) *Model {
-	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+	width, height, _ := term.GetSize(int(os.Stdout.Fd()))
 
 	ta := textarea.New()
 	ta.Placeholder = "Write your message..."
@@ -56,7 +51,7 @@ func New(client *openai.Client) *Model {
 	ta.CharLimit = 1000
 
 	ta.Focus()
-	ta.SetWidth(w)
+	ta.SetWidth(width)
 	ta.SetHeight(textAreaHeight)
 
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
@@ -67,31 +62,38 @@ func New(client *openai.Client) *Model {
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 	sp.Spinner = spinner.Dot
 
-	historyWidth := int(math.Floor(float64(w) * chatHistoryWidth))
-	ch := viewport.New(historyWidth, h-textAreaHeight*2)
-	ch.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
-	ch.SetContent(lipgloss.NewStyle().Width(w).Render(" "))
+	historyWidth := int(math.Floor(float64(width) * chatHistoryWidth))
 
-	vp := viewport.New(w, h-textAreaHeight*2)
-	vp.Width = w
-	vp.Height = h - textAreaHeight*2
-	vp.SetContent(lipgloss.NewStyle().Width(w).Render(fmt.Sprintf("Welcom to term-gpt!\n%dx%d", w, h)))
+	// i have no idea why i need to do textAreaHeight*2 but it works
+	ch := viewport.New(historyWidth, height-textAreaHeight*2)
+	ch.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
+	ch.SetContent(lipgloss.NewStyle().Width(width).Render(" "))
+
+	chList := list.New(testItems(), list.NewDefaultDelegate(), historyWidth-2, height-textAreaHeight*2-2)
+	chList.Title = "Chat History"
+
+	vp := viewport.New(width-historyWidth, height-textAreaHeight*2)
 	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Model{
-		textarea:     ta,
-		chatHistory:  ch,
-		chatVp:       vp,
-		spinner:      sp,
-		chat:         newChatLog(),
-		client:       client,
-		ctx:          ctx,
-		cancel:       cancel,
-		windowWidth:  w,
-		windowHeight: h,
+	m := &Model{
+		textarea:        ta,
+		chatHistory:     ch,
+		chatHistoryList: chList,
+		chatVp:          vp,
+		spinner:         sp,
+		chat:            newChatLog(),
+		client:          client,
+		ctx:             ctx,
+		cancel:          cancel,
+		windowWidth:     width,
+		windowHeight:    height,
 	}
+
+	m.updateViewportContent("Welcom to term-gpt!\n%dx%d")
+
+	return m
 }
 
 // Init implements tea.Model.
@@ -102,12 +104,16 @@ func (m *Model) Init() tea.Cmd {
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
-		taCmd tea.Cmd
-		vpCmd tea.Cmd
+		taCmd   tea.Cmd
+		vpCmd   tea.Cmd
+		chCmd   tea.Cmd
+		chLiCmd tea.Cmd
 	)
 
 	m.textarea, taCmd = m.textarea.Update(msg)
 	m.chatVp, vpCmd = m.chatVp.Update(msg)
+	m.chatHistory, chCmd = m.chatHistory.Update(msg)
+	m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
 
 	switch msg := msg.(type) {
 	case *tea.Program:
@@ -125,7 +131,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tick
 
-	case chatResult:
+	case chatResultMsg:
 		m.waiting = false
 		if msg.err != nil {
 			msg.message = fmt.Sprintf("Error: %s", msg.err.Error())
@@ -165,7 +171,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	return m, tea.Batch(taCmd, vpCmd)
+	return m, tea.Batch(taCmd, vpCmd, chCmd, chLiCmd)
 }
 
 // View implements tea.Model.
@@ -177,9 +183,11 @@ func (m *Model) View() string {
 		textarea = m.textarea.View()
 	}
 
+	m.chatHistory.SetContent(m.chatHistoryList.View())
+
 	return fmt.Sprintf(
-		"%s\n\n%s\n\n",
-		m.chatVp.View(),
+		"\n%s\n\n%s\n\n",
+		lipgloss.JoinHorizontal(lipgloss.Top, m.chatVp.View(), m.chatHistory.View()),
 		textarea,
 	)
 }
@@ -190,8 +198,12 @@ func (m *Model) handleWindowResize(w, h int) {
 	m.windowWidth = h
 	m.windowWidth = w
 
+	historyWidth := int(math.Floor(float64(w) * chatHistoryWidth))
+	m.chatHistory.Width = historyWidth
+	m.chatHistory.Height = h - textAreaHeight
+
 	m.chatVp.Height = h - textAreaHeight
-	m.chatVp.Width = w
+	m.chatVp.Width = w - historyWidth
 
 	m.textarea.SetWidth(w)
 
@@ -218,9 +230,9 @@ func sendGptRequest(m *Model) {
 
 	if err != nil {
 		fmt.Print(err)
-		m.program.Send(chatResult{err: err})
+		m.program.Send(chatResultMsg{err: err})
 		return
 	}
 
-	m.program.Send(chatResult{message: resp.Choices[0].Message.Content})
+	m.program.Send(chatResultMsg{message: resp.Choices[0].Message.Content})
 }
