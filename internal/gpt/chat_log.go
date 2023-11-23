@@ -28,7 +28,7 @@ func (c chatLog) Render() string {
 			name = "GPT: "
 		}
 
-		buf.WriteString(c.nameStyle.Render(name) + msg.Content + "\n")
+		buf.WriteString(c.nameStyle.Render(name) + msg.Content + "\n\n")
 	}
 
 	return buf.String()

@@ -3,6 +3,7 @@ package gpt
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -10,7 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sashabaranov/go-openai"
+	"golang.org/x/term"
 )
+
+const textAreaHeight = 3
 
 type chatResult struct {
 	err     error
@@ -31,19 +35,24 @@ type Model struct {
 	cancel  context.CancelFunc
 	waiting bool
 
+	windowHeight int
+	windowWidth  int
+
 	program *tea.Program
 }
 
 // New creates a new model for the bubble tea tui
-func New(client *openai.Client) Model {
+func New(client *openai.Client) *Model {
+	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+
 	ta := textarea.New()
 	ta.Placeholder = "Write your message..."
-	ta.Prompt = "| "
+	// ta.Prompt = "| "
 	ta.CharLimit = 1000
 
 	ta.Focus()
-	ta.SetWidth(50)
-	ta.SetHeight(3)
+	ta.SetWidth(w)
+	ta.SetHeight(textAreaHeight)
 
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.ShowLineNumbers = false
@@ -53,29 +62,34 @@ func New(client *openai.Client) Model {
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 	sp.Spinner = spinner.Dot
 
-	vp := viewport.New(50, 10)
-	vp.SetContent("Welcom to term-gpt!")
+	vp := viewport.New(w, h-textAreaHeight*2)
+	vp.Width = w
+	vp.Height = h - textAreaHeight*2
+	vp.SetContent(lipgloss.NewStyle().Width(w).Render(fmt.Sprintf("Welcom to term-gpt!\n%dx%d", w, h)))
+	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return Model{
-		textarea: ta,
-		viewport: vp,
-		spinner:  sp,
-		chat:     newChatLog(),
-		client:   client,
-		ctx:      ctx,
-		cancel:   cancel,
+	return &Model{
+		textarea:     ta,
+		viewport:     vp,
+		spinner:      sp,
+		chat:         newChatLog(),
+		client:       client,
+		ctx:          ctx,
+		cancel:       cancel,
+		windowWidth:  w,
+		windowHeight: h,
 	}
 }
 
 // Init implements tea.Model.
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.spinner.Tick)
+func (m *Model) Init() tea.Cmd {
+	return tea.Batch(textarea.Blink, m.spinner.Tick, tick)
 }
 
 // Update implements tea.Model.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		taCmd tea.Cmd
 		vpCmd tea.Cmd
@@ -91,6 +105,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinMsg:
 		m.waiting = true
 
+	case tickMsg:
+		w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+		if w != m.windowWidth || h != m.windowHeight {
+			m.handleWindowResize(w, h)
+			return m, tea.Batch(tick, windowResize(w, h))
+		}
+
+		return m, tick
+
 	case chatResult:
 		m.waiting = false
 		if msg.err != nil {
@@ -100,8 +123,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Role:    openai.ChatMessageRoleSystem,
 			Content: msg.message,
 		})
-		m.viewport.SetContent(m.chat.Render())
-		m.viewport.GotoBottom()
+		m.updateViewportContent(m.chat.Render())
 
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -115,9 +137,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Content: m.textarea.Value(),
 			})
 
-			m.viewport.SetContent(m.chat.Render())
 			m.textarea.Reset()
-			m.viewport.GotoBottom()
+			m.updateViewportContent(m.chat.Render())
 
 			go sendGptRequest(m)
 		}
@@ -137,10 +158,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View implements tea.Model.
-func (m Model) View() string {
+func (m *Model) View() string {
 	var textarea string
 	if m.waiting {
-		textarea = m.spinner.View()
+		textarea = fmt.Sprintf(" %s GPT is thinking...", m.spinner.View())
 	} else {
 		textarea = m.textarea.View()
 	}
@@ -152,10 +173,29 @@ func (m Model) View() string {
 	)
 }
 
+// handleWindowResize updates the size of the windows containing elements based on the current
+// terminal window size
+func (m *Model) handleWindowResize(w, h int) {
+	m.windowWidth = h
+	m.windowWidth = w
+
+	m.viewport.Height = h - textAreaHeight
+	m.viewport.Width = w
+
+	m.textarea.SetWidth(w)
+
+	m.updateViewportContent(m.chat.Render())
+}
+
+func (m *Model) updateViewportContent(text string) {
+	m.viewport.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
+	m.viewport.GotoBottom()
+}
+
 var _ tea.Model = (*Model)(nil)
 
 // sendGptRequest sends off a completion request to the chat gpt api
-func sendGptRequest(m Model) {
+func sendGptRequest(m *Model) {
 	m.program.Send(spinMsg(true))
 
 	req := openai.ChatCompletionRequest{
