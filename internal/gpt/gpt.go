@@ -21,6 +21,13 @@ const (
 	chatHistoryWidth = 0.25
 )
 
+type focusedElement string
+
+const (
+	elemTextArea    focusedElement = "ta"
+	elemChatHistory focusedElement = "ch"
+)
+
 type Model struct {
 	chatHistory     viewport.Model
 	chatHistoryList list.Model
@@ -37,6 +44,8 @@ type Model struct {
 
 	windowHeight int
 	windowWidth  int
+
+	focus focusedElement
 
 	program *tea.Program
 }
@@ -89,9 +98,10 @@ func New(client *openai.Client) *Model {
 		cancel:          cancel,
 		windowWidth:     width,
 		windowHeight:    height,
+		focus:           elemTextArea,
 	}
 
-	m.updateViewportContent("Welcom to term-gpt!\n%dx%d")
+	m.updateViewportContent("Welcom to term-gpt!")
 
 	return m
 }
@@ -110,10 +120,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		chLiCmd tea.Cmd
 	)
 
-	m.textarea, taCmd = m.textarea.Update(msg)
+	switch m.focus {
+	case elemTextArea:
+		m.textarea, taCmd = m.textarea.Update(msg)
+	case elemChatHistory:
+		m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
+	}
 	m.chatVp, vpCmd = m.chatVp.Update(msg)
 	m.chatHistory, chCmd = m.chatHistory.Update(msg)
-	m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
 
 	switch msg := msg.(type) {
 	case *tea.Program:
@@ -148,6 +162,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fmt.Println("Goodbye :)")
 			m.cancel()
 			return m, tea.Quit
+		case tea.KeyTab:
+			if m.focus == elemTextArea {
+				m.textarea.Blur()
+				m.focus = elemChatHistory
+			} else {
+				m.textarea.Focus()
+				m.focus = elemTextArea
+			}
 		case tea.KeyEnter:
 			m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
 				Role:    openai.ChatMessageRoleUser,
