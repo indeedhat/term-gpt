@@ -6,7 +6,9 @@ require (
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/charmbracelet/lipgloss v0.7.1
+	github.com/davecgh/go-spew v1.1.1
 	github.com/joho/godotenv v1.5.1
+	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/sashabaranov/go-openai v1.17.8
 	golang.org/x/term v0.6.0
 )

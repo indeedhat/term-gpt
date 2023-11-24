@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/indeedhat/term-gpt/internal/gpt"
+	"github.com/indeedhat/term-gpt/internal/store"
 
 	"github.com/indeedhat/term-gpt/internal/env"
 	"github.com/sashabaranov/go-openai"
@@ -18,7 +19,17 @@ func main() {
 	}
 	client := openai.NewClientWithConfig(conf)
 
-	prog := tea.NewProgram(gpt.New(client), tea.WithAltScreen())
+	db, err := store.Connect()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	repo := store.NewChatHistorySqliteRepo(db)
+	if err := repo.MigrateSchema(); err != nil {
+		log.Fatal(err)
+	}
+
+	prog := tea.NewProgram(gpt.New(repo, client), tea.WithAltScreen())
 
 	// horrible hack
 	go func() {

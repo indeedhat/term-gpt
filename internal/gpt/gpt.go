@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/indeedhat/term-gpt/internal/store"
 	"github.com/sashabaranov/go-openai"
 	"golang.org/x/term"
 )
@@ -35,12 +36,12 @@ type Model struct {
 	textarea        textarea.Model
 	spinner         spinner.Model
 
-	// Chat concains the message history for this chat session
-	chat    *chatLog
-	client  *openai.Client
-	ctx     context.Context
-	cancel  context.CancelFunc
-	waiting bool
+	// Chat concains the message history for this activeChat session
+	activeChat chatLog
+	client     *openai.Client
+	ctx        context.Context
+	cancel     context.CancelFunc
+	waiting    bool
 
 	windowHeight int
 	windowWidth  int
@@ -48,15 +49,24 @@ type Model struct {
 	focus focusedElement
 
 	program *tea.Program
+	repo    store.ChatHistoryRepo
 }
 
 // New creates a new model for the bubble tea tui
-func New(client *openai.Client) *Model {
+func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
+	// query environment
 	width, height, _ := term.GetSize(int(os.Stdout.Fd()))
 
+	// load data
+	activeChat := newChatLog()
+	chatHistory := append(
+		[]store.ChatHistoryMeta{activeChat.history.ChatHistoryMeta},
+		repo.List()...,
+	)
+
+	// setup ui components
 	ta := textarea.New()
 	ta.Placeholder = "Write your message..."
-	// ta.Prompt = "| "
 	ta.CharLimit = 1000
 
 	ta.Focus()
@@ -78,7 +88,7 @@ func New(client *openai.Client) *Model {
 	ch.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
 	ch.SetContent(lipgloss.NewStyle().Width(width).Render(" "))
 
-	chList := list.New(testItems(), list.NewDefaultDelegate(), historyWidth-2, height-textAreaHeight*2-2)
+	chList := list.New(historyList(chatHistory), list.NewDefaultDelegate(), historyWidth-2, height-textAreaHeight*2-2)
 	chList.Title = "Chat History"
 
 	vp := viewport.New(width-historyWidth, height-textAreaHeight*2)
@@ -92,13 +102,14 @@ func New(client *openai.Client) *Model {
 		chatHistoryList: chList,
 		chatVp:          vp,
 		spinner:         sp,
-		chat:            newChatLog(),
 		client:          client,
 		ctx:             ctx,
 		cancel:          cancel,
 		windowWidth:     width,
 		windowHeight:    height,
 		focus:           elemTextArea,
+		activeChat:      activeChat,
+		repo:            repo,
 	}
 
 	m.updateViewportContent("Welcom to term-gpt!")
@@ -186,11 +197,13 @@ func (m *Model) handleChatResultMsg(msg chatResultMsg) {
 		msg.message = fmt.Sprintf("Error: %s", msg.err.Error())
 	}
 
-	m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
+	m.activeChat.history.ChatLog = append(m.activeChat.history.ChatLog, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleSystem,
 		Content: msg.message,
 	})
-	m.updateViewportContent(m.chat.Render())
+
+	m.saveCurrentChat()
+	m.updateViewportContent(m.activeChat.Render())
 }
 
 // handleTickMsg handles the update tick for the UI
@@ -220,13 +233,14 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			m.focus = elemTextArea
 		}
 	case tea.KeyEnter:
-		m.chat.messages = append(m.chat.messages, openai.ChatCompletionMessage{
+		m.activeChat.history.ChatLog = append(m.activeChat.history.ChatLog, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
 			Content: m.textarea.Value(),
 		})
 
+		m.saveCurrentChat()
 		m.textarea.Reset()
-		m.updateViewportContent(m.chat.Render())
+		m.updateViewportContent(m.activeChat.Render())
 
 		go sendGptRequest(m)
 	}
@@ -249,7 +263,7 @@ func (m *Model) handleWindowResize(w, h int) {
 
 	m.textarea.SetWidth(w)
 
-	m.updateViewportContent(m.chat.Render())
+	m.updateViewportContent(m.activeChat.Render())
 }
 
 // updateViewportContent fills the chat viewport with rendered messages constrained to the size
@@ -257,6 +271,15 @@ func (m *Model) handleWindowResize(w, h int) {
 func (m *Model) updateViewportContent(text string) {
 	m.chatVp.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
 	m.chatVp.GotoBottom()
+}
+
+func (m *Model) saveCurrentChat() {
+	if m.activeChat.history.Id == 0 {
+		_ = m.repo.Create(m.activeChat.history)
+	} else {
+		_ = m.repo.Update(m.activeChat.history)
+	}
+	m.chatHistoryList.SetItems(historyList(m.repo.List()))
 }
 
 var _ tea.Model = (*Model)(nil)
@@ -267,7 +290,7 @@ func sendGptRequest(m *Model) {
 
 	req := openai.ChatCompletionRequest{
 		Model:     openai.GPT3Dot5Turbo,
-		Messages:  m.chat.messages,
+		Messages:  m.activeChat.history.ChatLog,
 		MaxTokens: 2000,
 	}
 	resp, err := m.client.CreateChatCompletion(m.ctx, req)
