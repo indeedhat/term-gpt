@@ -19,3 +19,5 @@ This is a proof of concept at best
 
 ## Known issues
 - When GPT is thinking you can still see the top row of the textarea
+- there is a lot of flickering on ui update
+- on sending a request the chat viewport gets messed up

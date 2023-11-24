@@ -119,7 +119,7 @@ func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.spinner.Tick, tick)
+	return tea.Batch(textarea.Blink, m.spinner.Tick)
 }
 
 // Update implements tea.Model.
@@ -129,6 +129,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case *tea.Program:
 		m.program = msg
+	case tea.WindowSizeMsg:
+		m.handleWindowResize()
 	case spinMsg:
 		m.waiting = true
 	case chatResultMsg:
@@ -137,8 +139,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.handleKeyMsg(msg); cmd != nil {
 			return m, cmd
 		}
-	case tickMsg:
-		return m, m.handleTickMsg(msg)
 	case error:
 		m.cancel()
 		return m, tea.Quit
@@ -180,9 +180,22 @@ func (m *Model) updateUiComponents(msg tea.Msg) tea.Cmd {
 	case elemTextArea:
 		m.textarea, taCmd = m.textarea.Update(msg)
 	case elemChatHistory:
+		curIdx := m.chatHistoryList.Index()
 		m.chatHistoryList, chLiCmd = m.chatHistoryList.Update(msg)
+
+		// i suspect i might end up with a race condition problem here when sending gpt
+		// requests, if it happens i may need to add a mutex
+		if m.chatHistoryList.Index() != curIdx {
+			item := m.chatHistoryList.SelectedItem().(store.ChatHistoryMeta)
+			if item.Id == 0 {
+				m.activeChat = newChatLog()
+			} else {
+				m.activeChat.history = m.repo.Find(item.Id)
+			}
+			m.updateViewportContent(m.activeChat.Render())
+		}
 	}
-	m.chatVp, vpCmd = m.chatVp.Update(msg)
+	// m.chatVp, vpCmd = m.chatVp.Update(msg)
 	m.chatHistory, chCmd = m.chatHistory.Update(msg)
 	m.spinner, spinCmd = m.spinner.Update(msg)
 
@@ -204,17 +217,6 @@ func (m *Model) handleChatResultMsg(msg chatResultMsg) {
 
 	m.saveCurrentChat()
 	m.updateViewportContent(m.activeChat.Render())
-}
-
-// handleTickMsg handles the update tick for the UI
-func (m *Model) handleTickMsg(msg tickMsg) tea.Cmd {
-	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
-	if w != m.windowWidth || h != m.windowHeight {
-		m.handleWindowResize(w, h)
-		return tea.Batch(tick, windowResize(w, h))
-	}
-
-	return tick
 }
 
 // handleKeyMsg handles the side effects of any defined tea.KeyMsg key presses
@@ -250,7 +252,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 // handleWindowResize updates the size of the windows containing elements based on the current
 // terminal window size
-func (m *Model) handleWindowResize(w, h int) {
+func (m *Model) handleWindowResize() {
+	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
+	if w == m.windowWidth && h == m.windowHeight {
+		return
+	}
+
 	m.windowWidth = h
 	m.windowWidth = w
 
@@ -280,6 +287,7 @@ func (m *Model) saveCurrentChat() {
 		_ = m.repo.Update(m.activeChat.history)
 	}
 	m.chatHistoryList.SetItems(historyList(m.repo.List()))
+	m.chatHistoryList.Select(0)
 }
 
 var _ tea.Model = (*Model)(nil)
