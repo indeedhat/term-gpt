@@ -9,9 +9,9 @@ This is a proof of concept at best
 - [ ] help modal for controls
 - [ ] implement a markdown bubble for the chat responses
 - [ ] need some better styling
-- [ ] new config options
-    - [ ] max tokens to use per request
-    - [ ] max number of prev messages to send along with requests
+- [x] new config options
+    - [x] max tokens to use per request
+    - [x] max number of prev messages to send along with requests
 - [x] The spinner does not spin when waiting for a response
 - [x] app does not take over the whole terminal window
 - [x] dynamically resize viewport or terminal resize
