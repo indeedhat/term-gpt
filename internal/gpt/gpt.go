@@ -26,6 +26,8 @@ const (
 	chatVpPaddingWidth = 4
 )
 
+var colorMain = lipgloss.Color("5")
+
 // focusedElement represents the ui element that the user is currently interacting with and
 // defines the keyboard behaviour for that element
 //
@@ -100,11 +102,12 @@ func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
 	txtArea.SetHeight(textAreaHeight)
 
 	txtArea.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	txtArea.FocusedStyle.Prompt.Foreground(colorMain)
 	txtArea.ShowLineNumbers = false
 	txtArea.KeyMap.InsertNewline.SetEnabled(false)
 
 	requestSpinner := spinner.New()
-	requestSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	requestSpinner.Style = lipgloss.NewStyle().Foreground(colorMain)
 	requestSpinner.Spinner = spinner.Dot
 
 	// Chat History Viewport
@@ -246,6 +249,21 @@ func (m *Model) handleChatResultMsg(msg chatResultMsg) {
 	m.updateViewportContent(m.activeChat.Render())
 }
 
+// focusElement switches the pane focus to the indicated element
+func (m *Model) focusElement(elem focusedElement) {
+	m.textarea.Blur()
+	m.chatHistory.Style.BorderForeground(lipgloss.NoColor{})
+
+	switch elem {
+	case elemTextArea:
+		m.textarea.Focus()
+	case elemChatHistory:
+		m.chatHistory.Style.BorderForeground(colorMain)
+	}
+
+	m.focus = elem
+}
+
 // handleKeyMsg handles the side effects of any defined tea.KeyMsg key presses
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	switch msg.Type {
@@ -253,15 +271,20 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		fmt.Println("Goodbye :)")
 		m.cancel()
 		return tea.Quit
+
 	case tea.KeyTab:
 		if m.focus == elemTextArea {
-			m.textarea.Blur()
-			m.focus = elemChatHistory
+			m.focusElement(elemChatHistory)
 		} else {
-			m.textarea.Focus()
-			m.focus = elemTextArea
+			m.focusElement(elemTextArea)
 		}
+
 	case tea.KeyEnter:
+		if m.focus == elemChatHistory {
+			m.focusElement(elemTextArea)
+			return nil
+		}
+
 		m.activeChat.history.ChatLog = append(m.activeChat.history.ChatLog, openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
 			Content: m.textarea.Value(),
