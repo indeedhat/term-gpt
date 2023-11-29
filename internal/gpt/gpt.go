@@ -20,6 +20,10 @@ import (
 const (
 	textAreaHeight   = 3
 	chatHistoryWidth = 0.25
+
+	// screen realestate used by ui flavour
+	borderCols         = 4
+	chatVpPaddingWidth = 4
 )
 
 // focusedElement represents the ui element that the user is currently interacting with and
@@ -113,8 +117,9 @@ func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
 	chatHistoryVp.SetContent(lipgloss.NewStyle().Width(width).Render(" "))
 
 	// Chat Viewport
-	vpchatVp := viewport.New(width-historyWidth, height-textAreaHeight*2)
-	vpchatVp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
+	chatVp := viewport.New(width-historyWidth, height-textAreaHeight*2)
+	chatVp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
+	chatVp.Style.Padding(1, 2)
 
 	// Context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,7 +128,7 @@ func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
 		textarea:        txtArea,
 		chatHistory:     chatHistoryVp,
 		chatHistoryList: chatHistoryList,
-		chatVp:          vpchatVp,
+		chatVp:          chatVp,
 		spinner:         requestSpinner,
 		client:          client,
 		ctx:             ctx,
@@ -300,7 +305,10 @@ func (m *Model) handleWindowResize() {
 // updateViewportContent fills the chat viewport with rendered messages constrained to the size
 // of the viewport
 func (m *Model) updateViewportContent(text string) {
-	m.chatVp.SetContent(lipgloss.NewStyle().Width(m.windowWidth).Render(text))
+	historyWidth := int(math.Floor(float64(m.windowWidth) * chatHistoryWidth))
+	chatVpWidth := m.windowWidth - borderCols - chatVpPaddingWidth - historyWidth
+
+	m.chatVp.SetContent(lipgloss.NewStyle().Width(chatVpWidth).Render(text))
 	m.chatVp.GotoBottom()
 }
 
