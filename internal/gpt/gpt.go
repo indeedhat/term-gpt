@@ -86,44 +86,45 @@ func New(repo store.ChatHistoryRepo, client *openai.Client) *Model {
 		repo.List()...,
 	)
 
-	// setup ui components
-	ta := textarea.New()
-	ta.Placeholder = "Write your message..."
-	ta.CharLimit = 1000
+	// Textarea setup
+	txtArea := textarea.New()
+	txtArea.Placeholder = "Write your message..."
+	txtArea.CharLimit = 1000
 
-	ta.Focus()
-	ta.SetWidth(width)
-	ta.SetHeight(textAreaHeight)
+	txtArea.Focus()
+	txtArea.SetWidth(width)
+	txtArea.SetHeight(textAreaHeight)
 
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline.SetEnabled(false)
+	txtArea.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	txtArea.ShowLineNumbers = false
+	txtArea.KeyMap.InsertNewline.SetEnabled(false)
 
-	sp := spinner.New()
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	sp.Spinner = spinner.Dot
+	requestSpinner := spinner.New()
+	requestSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	requestSpinner.Spinner = spinner.Dot
 
+	// Chat History Viewport
 	historyWidth := int(math.Floor(float64(width) * chatHistoryWidth))
+	chatHistoryList := list.New(historyList(chatHistory), list.NewDefaultDelegate(), historyWidth-2, height-textAreaHeight*2-2)
+	chatHistoryList.Title = "Chat History"
 
-	// i have no idea why i need to do textAreaHeight*2 but it works
-	ch := viewport.New(historyWidth, height-textAreaHeight*2)
-	ch.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
-	ch.SetContent(lipgloss.NewStyle().Width(width).Render(" "))
+	chatHistoryVp := viewport.New(historyWidth, height-textAreaHeight*2)
+	chatHistoryVp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
+	chatHistoryVp.SetContent(lipgloss.NewStyle().Width(width).Render(" "))
 
-	chList := list.New(historyList(chatHistory), list.NewDefaultDelegate(), historyWidth-2, height-textAreaHeight*2-2)
-	chList.Title = "Chat History"
+	// Chat Viewport
+	vpchatVp := viewport.New(width-historyWidth, height-textAreaHeight*2)
+	vpchatVp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
 
-	vp := viewport.New(width-historyWidth, height-textAreaHeight*2)
-	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder())
-
+	// Context
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Model{
-		textarea:        ta,
-		chatHistory:     ch,
-		chatHistoryList: chList,
-		chatVp:          vp,
-		spinner:         sp,
+		textarea:        txtArea,
+		chatHistory:     chatHistoryVp,
+		chatHistoryList: chatHistoryList,
+		chatVp:          vpchatVp,
+		spinner:         requestSpinner,
 		client:          client,
 		ctx:             ctx,
 		cancel:          cancel,
@@ -174,7 +175,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) View() string {
 	var textarea string
 	if m.waiting {
-		textarea = fmt.Sprintf(" %s GPT is thinking...", m.spinner.View())
+		textarea = fmt.Sprintf(" %s GPT is thinking...\n\n", m.spinner.View())
 	} else {
 		textarea = m.textarea.View()
 	}
@@ -286,9 +287,9 @@ func (m *Model) handleWindowResize() {
 
 	historyWidth := int(math.Floor(float64(w) * chatHistoryWidth))
 	m.chatHistory.Width = historyWidth
-	m.chatHistory.Height = h - textAreaHeight
+	m.chatHistory.Height = h - textAreaHeight*2
 
-	m.chatVp.Height = h - textAreaHeight
+	m.chatVp.Height = h - textAreaHeight*2
 	m.chatVp.Width = w - historyWidth
 
 	m.textarea.SetWidth(w)

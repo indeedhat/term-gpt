@@ -22,8 +22,8 @@ This is a proof of concept at best
     - its not perfect but it will do for now
 
 ## Known issues
-- [ ] When GPT is thinking you can still see the top row of the textarea
-- [ ] on sending a request the chat viewport gets messed up
-- [ ] resizing the windo can break the ui cutting off the top border of the chat/history viewports
 - [ ] there is a lot of flickering on ui update
     - this only appears to happen in some termitals and not others, in alacritty it only happens when running via tmux
+- [x] on sending a request the chat viewport gets messed up
+- [x] When GPT is thinking you can still see the top row of the textarea
+- [x] resizing the window can break the ui cutting off the top border of the chat/history viewports
