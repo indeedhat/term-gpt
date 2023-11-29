@@ -4,11 +4,15 @@ A bubbletea tui app for chat GPT
 This is a proof of concept at best
 
 ## TODO
-- [ ] save/resume chats (sqlite probably)
-    - ui mostly implemented
 - [ ] help modal for controls
 - [ ] implement a markdown bubble for the chat responses
 - [ ] need some better styling
+- [ ] save/resume chats (sqlite probably)
+    - [x] save chats
+    - [x] display list of chat history
+    - [x] switch to previous chats
+    - [ ] delete previous chats
+
 - [x] new config options
     - [x] max tokens to use per request
     - [x] max number of prev messages to send along with requests
@@ -18,6 +22,8 @@ This is a proof of concept at best
     - its not perfect but it will do for now
 
 ## Known issues
-- When GPT is thinking you can still see the top row of the textarea
-- there is a lot of flickering on ui update
-- on sending a request the chat viewport gets messed up
+- [ ] When GPT is thinking you can still see the top row of the textarea
+- [ ] on sending a request the chat viewport gets messed up
+- [ ] resizing the windo can break the ui cutting off the top border of the chat/history viewports
+- [ ] there is a lot of flickering on ui update
+    - this only appears to happen in some termitals and not others, in alacritty it only happens when running via tmux

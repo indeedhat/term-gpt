@@ -22,6 +22,10 @@ const (
 	chatHistoryWidth = 0.25
 )
 
+// focusedElement represents the ui element that the user is currently interacting with and
+// defines the keyboard behaviour for that element
+//
+// for example the textarea will only accept text input when it is focused
 type focusedElement string
 
 const (
@@ -30,26 +34,44 @@ const (
 )
 
 type Model struct {
-	chatHistory     viewport.Model
+	// chatHistory is the ui element that displays the previous chats
+	chatHistory viewport.Model
+	// chatHistoryList contains the data model for the above chatHistory element
 	chatHistoryList list.Model
-	chatVp          viewport.Model
-	textarea        textarea.Model
-	spinner         spinner.Model
+	// chatVp represents the ui element that displays the currently active chat history
+	chatVp viewport.Model
+	// textarea is the ui element that the user types into
+	textarea textarea.Model
+	// spinner to show when we are waiting for a response from ChatGPT
+	spinner spinner.Model
 
 	// Chat concains the message history for this activeChat session
 	activeChat chatLog
-	client     *openai.Client
-	ctx        context.Context
-	cancel     context.CancelFunc
-	waiting    bool
 
+	// client holds the openai client for
+	client *openai.Client
+
+	// ctx is the shared context sent along with web requests an can be used to gracefully close
+	// connections early if the app closes while a web request is running
+	ctx context.Context
+	// cancel stores the cancel function that can be used to close the ctx
+	cancel context.CancelFunc
+
+	// waiting tracks if we are currently waiting for a response from the openai API or not
+	waiting bool
+
+	// windowHeight stores the height of the terminal from the previous frame
 	windowHeight int
-	windowWidth  int
+	// windowWidth stores the width of the terminal from the previous frame
+	windowWidth int
 
+	// focus tracks the element the user is currently focusing
 	focus focusedElement
 
+	// program stores the bubble tea program reference
 	program *tea.Program
-	repo    store.ChatHistoryRepo
+	// repo is the storage repository that persists chat data between sessions
+	repo store.ChatHistoryRepo
 }
 
 // New creates a new model for the bubble tea tui
@@ -148,6 +170,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View implements tea.Model.
+// It is called to generate the current frame for the application
 func (m *Model) View() string {
 	var textarea string
 	if m.waiting {
@@ -186,15 +209,11 @@ func (m *Model) updateUiComponents(msg tea.Msg) tea.Cmd {
 		// i suspect i might end up with a race condition problem here when sending gpt
 		// requests, if it happens i may need to add a mutex
 		if m.chatHistoryList.Index() != curIdx {
-			item := m.chatHistoryList.SelectedItem().(store.ChatHistoryMeta)
-			if item.Id == 0 {
-				m.activeChat = newChatLog()
-			} else {
-				m.activeChat.history = m.repo.Find(item.Id)
-			}
+			loadChat(m)
 			m.updateViewportContent(m.activeChat.Render())
 		}
 	}
+
 	// m.chatVp, vpCmd = m.chatVp.Update(msg)
 	m.chatHistory, chCmd = m.chatHistory.Update(msg)
 	m.spinner, spinCmd = m.spinner.Update(msg)
@@ -215,7 +234,9 @@ func (m *Model) handleChatResultMsg(msg chatResultMsg) {
 		Content: msg.message,
 	})
 
-	m.saveCurrentChat()
+	saveChat(m)
+	updateChatList(m)
+
 	m.updateViewportContent(m.activeChat.Render())
 }
 
@@ -240,7 +261,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			Content: m.textarea.Value(),
 		})
 
-		m.saveCurrentChat()
+		saveChat(m)
+		updateChatList(m)
+
 		m.textarea.Reset()
 		m.updateViewportContent(m.activeChat.Render())
 
@@ -280,34 +303,4 @@ func (m *Model) updateViewportContent(text string) {
 	m.chatVp.GotoBottom()
 }
 
-func (m *Model) saveCurrentChat() {
-	if m.activeChat.history.Id == 0 {
-		_ = m.repo.Create(m.activeChat.history)
-	} else {
-		_ = m.repo.Update(m.activeChat.history)
-	}
-	m.chatHistoryList.SetItems(historyList(m.repo.List()))
-	m.chatHistoryList.Select(0)
-}
-
 var _ tea.Model = (*Model)(nil)
-
-// sendGptRequest sends off a completion request to the chat gpt api
-func sendGptRequest(m *Model) {
-	m.program.Send(spinMsg(true))
-
-	req := openai.ChatCompletionRequest{
-		Model:     openai.GPT3Dot5Turbo,
-		Messages:  m.activeChat.history.ChatLog,
-		MaxTokens: 2000,
-	}
-	resp, err := m.client.CreateChatCompletion(m.ctx, req)
-
-	if err != nil {
-		fmt.Print(err)
-		m.program.Send(chatResultMsg{err: err})
-		return
-	}
-
-	m.program.Send(chatResultMsg{message: resp.Choices[0].Message.Content})
-}
