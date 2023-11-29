@@ -272,6 +272,14 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.cancel()
 		return tea.Quit
 
+		// scroll the chat window
+	case tea.KeyCtrlN:
+		m.chatVp.LineDown(1)
+		return textarea.Blink
+	case tea.KeyCtrlP:
+		m.chatVp.LineUp(1)
+		return textarea.Blink
+
 	case tea.KeyTab:
 		if m.focus == elemTextArea {
 			m.focusElement(elemChatHistory)

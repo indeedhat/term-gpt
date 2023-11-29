@@ -1,7 +1,14 @@
 # Term GPT
 A bubbletea tui app for chat GPT
 
-This is a proof of concept at best
+This app is still a bit rough arround the edges (to say the least) but it is now in a useable state.
+
+## Controls
+- Press tab to toggle between the chat history view and the chat textarea
+- j,k/up,down can be used to scroll the chat history
+- Ctrl+c to exit
+- Ctrl+n scrolls the chat window down
+- Ctrl+p scrolls the chat window up
 
 ## TODO
 - [ ] help modal for controls
@@ -22,6 +29,7 @@ This is a proof of concept at best
     - its not perfect but it will do for now
 
 ## Known issues
+- [ ] when scrolling up in the chat viewport only the top half of the viewport scrolls until the next textarea blink event
 - [ ] there is a lot of flickering on ui update
     - this only appears to happen in some termitals and not others, in alacritty it only happens when running via tmux
 - [x] on sending a request the chat viewport gets messed up
