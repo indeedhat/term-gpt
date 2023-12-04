@@ -12,14 +12,13 @@ This app is still a bit rough arround the edges (to say the least) but it is now
 
 ## TODO
 - [ ] help modal for controls
-- [ ] implement a markdown bubble for the chat responses
 - [ ] need some better styling
 - [ ] save/resume chats (sqlite probably)
     - [x] save chats
     - [x] display list of chat history
     - [x] switch to previous chats
     - [ ] delete previous chats
-
+- [x] implement a markdown bubble for the chat responses
 - [x] new config options
     - [x] max tokens to use per request
     - [x] max number of prev messages to send along with requests

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/indeedhat/term-gpt/internal/store"
 	"github.com/sashabaranov/go-openai"
@@ -13,12 +14,16 @@ import (
 type chatLog struct {
 	history   *store.ChatHistory
 	nameStyle lipgloss.Style
+	markdown  *glamour.TermRenderer
 }
 
 // newChatLog helper for setting up the chat log instance
 func newChatLog() chatLog {
+	md, _ := glamour.NewTermRenderer(glamour.WithAutoStyle())
+
 	return chatLog{
 		nameStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		markdown:  md,
 		history: &store.ChatHistory{
 			ChatHistoryMeta: store.ChatHistoryMeta{
 				ChatTitle: "New Chat",
@@ -38,7 +43,15 @@ func (c chatLog) Render() string {
 			name = "GPT: "
 		}
 
-		buf.WriteString(c.nameStyle.Render(name) + msg.Content + "\n\n")
+		var content string
+		if c.markdown != nil {
+			content, _ = c.markdown.Render(msg.Content)
+		}
+		if content == "" {
+			content = msg.Content
+		}
+
+		buf.WriteString(c.nameStyle.Render(name) + content + "\n\n")
 	}
 
 	return buf.String()
